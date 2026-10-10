@@ -1,6 +1,7 @@
 import { Store, emptyData } from './store.js';
 import * as C from './calc.js';
-import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults } from './ui.js';
+import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults, MODOS } from './ui.js';
+import { colorSub, familia, tint } from './colors.js';
 import { renderDashboard, renderTabla, renderHistorico, renderPrestamos, renderExtra } from './views.js';
 import { leerHoja, parseExtracto } from './importer.js';
 
@@ -27,13 +28,13 @@ const VIEWS = [
 const state = {
   view: 'dash', year: new Date().getFullYear(), tabla: 'anual', ocultarVacias: true, compMes: new Date().getMonth() + 1,
   lines: { ing: true, gas: true, pre: true, aho: true, gt: true }, groups: { ING: true, PRE: true, GMF: true, GAF: true, GEX: true },
-  histCat: 'ahorro', histModo: 'total', loan: null, loanMode: 'eur', oocYear: null,
+  histCat: 'ahorro', histModo: 'total', loan: null, oocYear: null, disp: 'both', dispOv: {},
   mv: { q: '', anio: '', mes: '', grupo: '', estado: '', limit: 60 }
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('fz_ui') || '{}'), { mv: { ...state.mv, limit: 60 } }); } catch { }
-const saveUi = () => { try { const { view, tabla, ocultarVacias, lines, groups, histCat, histModo, loanMode } = state; localStorage.setItem('fz_ui', JSON.stringify({ view, tabla, ocultarVacias, lines, groups, histCat, histModo, loanMode })); } catch { } };
+const saveUi = () => { try { const { view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv } = state; localStorage.setItem('fz_ui', JSON.stringify({ view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv })); } catch { } };
 
-const ctx = { state, rerender: () => render(), openMov: (id) => editarMov(D().movimientos.find(m => m.id === id)), showMovList };
+const ctx = { state, saveUi: () => saveUi(), mode: (k) => state.dispOv[k] || state.disp, rerender: () => render(), openMov: (id) => editarMov(D().movimientos.find(m => m.id === id)), showMovList };
 
 /* ===================== Bloqueo con PIN ===================== */
 function lockScreen() {
@@ -95,7 +96,7 @@ async function resolverConflicto(remote) {
 async function start() {
   $('#lock').classList.add('hidden'); $('#app').classList.remove('hidden');
   applyTheme(); chartDefaults();
-  D().ajustes ||= { autoLock: 5, ingresosMayorVerde: false, tema: 'auto' };
+  D().ajustes ||= { autoLock: 5, tema: 'auto' };
   buildShell(); render();
   if (Store.syncConfigured()) { Store.setStatus('pending', 'Comprobando la nube…'); await Store.pull(resolverConflicto); }
   else updateSync();
@@ -110,6 +111,7 @@ function buildShell() {
   $('#app').innerHTML = `
   <header class="topbar"><h1 id="title"></h1>
     <button class="sync" id="syncBtn" title=""><i></i><span id="syncTxt"></span></button>
+    <button class="dispbtn" id="dispBtn" title="Mostrar valores / % en toda la app" aria-label="Valores o porcentajes"></button>
     <button class="iconbtn" id="lockBtn" aria-label="Bloquear">${ICON.lock}</button>
     <button class="iconbtn" id="setBtn" aria-label="Ajustes">${ICON.gear}</button></header>
   <main id="main"></main>
@@ -117,6 +119,13 @@ function buildShell() {
   $$('.bottomnav [data-v]').forEach(b => b.onclick = () => { state.view = b.dataset.v; saveUi(); render(); window.scrollTo(0, 0); });
   $('#setBtn').onclick = () => { state.view = 'ajustes'; render(); window.scrollTo(0, 0); };
   $('#lockBtn').onclick = () => { Store.lock(); lockScreen(); };
+  $('#dispBtn').onclick = async () => {
+    const v = await choiceDlg('Mostrar en toda la app', 'Elige qué ver en gráficos, KPIs y tablas. Cada gráfico puede tener además su propio ajuste (desplegable de su esquina); "Restablecer" los devuelve todos al global.',
+      [...MODOS.map(x => ({ label: `${x.s}  ${x.n}`, value: x.k, primary: x.k === state.disp })), { label: 'Restablecer ajustes por gráfico', value: '__reset' }]);
+    if (!v) return; if (v === '__reset') state.dispOv = {}; else state.disp = v;
+    saveUi(); updateDispBtn(); render();
+  };
+  updateDispBtn();
   $('#syncBtn').onclick = async () => { if (!Store.syncConfigured()) { state.view = 'ajustes'; render(); return; } Store.vault.sync.dirty ? await Store.push('Manual') : await Store.pull(resolverConflicto); toast(Store.statusMsg || 'Sincronizado'); };
 }
 
@@ -126,6 +135,7 @@ Store.on((what) => {
   if (what === 'data') { applyTheme(); render(); }
   if (what === 'conflict') Store.pull(resolverConflicto);
 });
+function updateDispBtn() { const b = $('#dispBtn'); if (b) b.textContent = MODOS.find(x => x.k === state.disp).s; }
 function updateSync() {
   const b = $('#syncBtn'); if (!b) return;
   const st = Store.syncConfigured() ? Store.status : 'off';
@@ -136,7 +146,7 @@ function updateSync() {
 
 function render() {
   if (!Store.key) return;
-  D().ajustes = { autoLock: 5, ingresosMayorVerde: false, tema: 'auto', ...(D().ajustes || {}) };
+  D().ajustes = { autoLock: 5, tema: 'auto', ...(D().ajustes || {}) }; delete D().ajustes.ingresosMayorVerde;
   destroyCharts();
   const v = VIEWS.find(x => x.k === state.view);
   $('#title').textContent = v ? v.t : 'Ajustes';
@@ -176,9 +186,10 @@ function subgrupoSelect(id, sel, allowEmpty = true) {
   return `<select id="${id}">${allowEmpty ? `<option value="">— Sin clasificar —</option>` : ''}${Object.entries(C.GRUPOS).map(([g, n]) => `<optgroup label="${n}">${(cat[g] || []).map(s => `<option value="${esc(s)}" ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`).join('')}</select>`;
 }
 function movCard(m, rep, extra = '') {
-  return `<div class="mov" data-id="${m.id}">${extra}<div class="t">${esc(m.concepto2 || m.concepto || m.movimiento)}</div><div class="a num ${cls(m.importe)}">${eur(m.importe)}</div>
+  const fc = m.subgrupo ? colorSub(D(), m.subgrupo) : 'var(--warn)';
+  return `<div class="mov" data-id="${m.id}" style="box-shadow:inset 4px 0 0 ${fc}">${extra}<div class="t">${esc(m.concepto2 || m.concepto || m.movimiento)}</div><div class="a num ${cls(m.importe)}">${eur(m.importe)}</div>
     <div class="m">${fecha(m.fecha)} · ${esc(m.concepto)}${m.movimiento ? ' · ' + esc(m.movimiento) : ''}</div><div></div>
-    <div class="tags">${m.subgrupo ? `<span class="tag ${m.grupo === 'OOC' ? 'acc' : ''}">${esc(C.GRUPOS[m.grupo] || '')} › ${esc(m.subgrupo)}</span>` : '<span class="tag warn">Sin clasificar</span>'}
+    <div class="tags">${m.subgrupo ? `<span class="tag" style="background:${tint(fc, 22)}"><span class="sw" style="background:${fc}"></span>${esc(C.GRUPOS[m.grupo] || '')} › ${esc(m.subgrupo)}</span>` : '<span class="tag warn">Sin clasificar</span>'}
     ${m.mes && m.anio ? `<span class="tag">${C.MESES_C[m.mes - 1]} ${m.anio}</span>` : '<span class="tag warn">Sin mes</span>'}${rep.has(m.id) ? '<span class="tag bad">R · posible repetido</span>' : ''}</div></div>`;
 }
 
@@ -242,7 +253,7 @@ async function editarMov(m) {
     <div class="row"><label>Mes asignado<select id="eMes"><option value="">—</option>${C.MESES.map((n, i) => `<option value="${i + 1}" ${m.mes === i + 1 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label>Año asignado<input type="number" id="eA" value="${m.anio || ''}"></label></div>
   </div>
-  <div class="actions">${nuevo ? '' : '<button class="btn danger left" id="eDel">Eliminar</button><button class="btn ghost" id="eRule">Crear regla</button>'}<button class="btn ghost" id="eX">Cancelar</button><button class="btn primary" id="eOk">Guardar</button></div>`,
+  <div class="actions">${nuevo ? '' : '<button class="btn danger left" id="eDel">Eliminar</button><button class="btn ghost" id="eRule" title="Guarda el movimiento y crea una regla con su concepto">Guardar y crear regla</button>'}<button class="btn ghost" id="eX">Cancelar</button><button class="btn primary" id="eOk">Guardar</button></div>`,
     (s, close) => {
       $('#eS', s).onchange = () => { if (!$('#eMes', s).value && $('#eF', s).value) { const r = C.matchRule(D(), { concepto: $('#eC', s).value, movimiento: $('#eM', s).value }); const d = C.mesAnioPorDefecto($('#eF', s).value, r?.mesSiguiente); $('#eMes', s).value = d.mes; $('#eA', s).value = d.anio; } };
       $('#eX', s).onclick = () => close();
@@ -257,7 +268,12 @@ async function editarMov(m) {
       };
       if (!nuevo) {
         $('#eDel', s).onclick = async () => { if (await confirmDlg('Eliminar movimiento', `${esc(m.concepto)} · ${eur(m.importe)}`, 'Eliminar', true)) { D().movimientos = D().movimientos.filter(x => x.id !== m.id); await Store.commit('Eliminar movimiento'); close(); toast('Eliminado'); } };
-        $('#eRule', s).onclick = () => { const v = read(); close(); editarRegla(null, { patron: v.concepto || v.movimiento, tipo: 'exacto', grupo: v.grupo, subgrupo: v.subgrupo, mesSiguiente: false }); };
+        $('#eRule', s).onclick = async () => {
+          const v = read(); if (!v.fecha) return alert('Indica la fecha');
+          const L = D().movimientos; const i = L.findIndex(x => x.id === v.id); if (i >= 0) L[i] = v; else L.push(v);
+          await Store.commit('Editar movimiento'); close(); toast('Movimiento guardado');
+          editarRegla(null, { patron: v.concepto || v.movimiento, tipo: 'exacto', grupo: v.grupo, subgrupo: v.subgrupo, mesSiguiente: false });
+        };
       }
     });
 }
@@ -346,7 +362,7 @@ function renderAjustes(main) {
     <div class="list" id="rList"></div></details>
 
   <details class="card" style="margin-top:14px"><summary>🗂️ Grupos y subgrupos</summary>
-    ${Object.entries(C.GRUPOS).map(([g, n]) => `<h3 style="margin-top:12px">${n}</h3><div class="chips">${(D().catalogo[g] || []).map(sb => `<button class="chip" data-g="${g}" data-s="${esc(sb)}">${esc(sb)} ✎</button>`).join('')}<button class="chip on" data-add="${g}">＋ Añadir</button></div>`).join('')}
+    ${Object.entries(C.GRUPOS).map(([g, n]) => `<h3 style="margin-top:12px">${n}</h3><div class="chips">${(D().catalogo[g] || []).map(sb => `<button class="chip" data-g="${g}" data-s="${esc(sb)}"><span class="sw" style="background:${colorSub(D(), sb)}"></span>${esc(sb)} ✎</button>`).join('')}<button class="chip on" data-add="${g}">＋ Añadir</button></div>`).join('')}
     <p class="small muted" style="margin-top:10px">Renombrar un subgrupo actualiza también tus movimientos, reglas y préstamos.</p></details>
 
   <details class="card" style="margin-top:14px"><summary>📚 Histórico manual (años sin movimientos)</summary>
@@ -356,8 +372,7 @@ function renderAjustes(main) {
     </tbody></table></div><div class="actions"><button class="btn ghost" id="hAdd">＋ Año</button><button class="btn primary" id="hSave">Guardar histórico</button></div></details>
 
   <div class="card" style="margin-top:14px"><h2>🎨 Visualización</h2><div class="form">
-    <label>Tema<select id="aTema"><option value="auto">Automático (según el sistema)</option><option value="light" ${aj.tema === 'light' ? 'selected' : ''}>Claro</option><option value="dark" ${aj.tema === 'dark' ? 'selected' : ''}>Oscuro</option></select></label>
-    <label>Color de la columna Promedio en filas de ingresos/ahorro (valores positivos)<select id="aIng"><option value="0">Promedio &lt; moda = verde (especificación original)</option><option value="1" ${aj.ingresosMayorVerde ? 'selected' : ''}>Promedio &gt; moda = verde (más ingreso es mejor)</option></select></label></div></div>
+    <label>Tema<select id="aTema"><option value="auto">Automático (según el sistema)</option><option value="light" ${aj.tema === 'light' ? 'selected' : ''}>Claro</option><option value="dark" ${aj.tema === 'dark' ? 'selected' : ''}>Oscuro</option></select></label></div></div>
 
   <div class="card" style="margin-top:14px"><h2>🔒 Seguridad y copias</h2><div class="form">
     <label>Bloqueo automático tras estar en segundo plano<select id="aLock">${[[1, '1 minuto'], [5, '5 minutos'], [15, '15 minutos'], [60, '1 hora'], [0, 'Nunca']].map(([v, n]) => `<option value="${v}" ${aj.autoLock == v ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
@@ -415,7 +430,6 @@ function renderAjustes(main) {
 
   // Visual / seguridad
   $('#aTema', main).onchange = async (e) => { aj.tema = e.target.value; applyTheme(); chartDefaults(); await Store.commit('Ajustes'); };
-  $('#aIng', main).onchange = async (e) => { aj.ingresosMayorVerde = e.target.value === '1'; await Store.commit('Ajustes'); };
   $('#aLock', main).onchange = async (e) => { aj.autoLock = +e.target.value; await Store.commit('Ajustes'); };
   $('#aPin', main).onclick = async () => {
     const p1 = prompt('Nuevo PIN (4-6 dígitos)'); if (!p1) return; if (!/^\d{4,6}$/.test(p1)) return alert('El PIN debe tener entre 4 y 6 dígitos');
