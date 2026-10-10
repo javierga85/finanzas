@@ -1,7 +1,7 @@
 // Código de colores por familia (grupo) y subgrupo — se usa en toda la app.
 //  Ingresos (incl. Preahorro y Ahorro) → verdes · Gasto mensual fijo → naranjas · Efectivo → amarillo claro
 //  Gasto anual fijo → azules · Gasto Extra → granates · Out of Context → grises
-import { SUB } from './calc.js';
+import { SUB } from './calc.js?v=1.5.2';
 
 const isDark = () => {
   const t = document.documentElement.getAttribute('data-theme');

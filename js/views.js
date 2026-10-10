@@ -1,10 +1,10 @@
 // Vistas de análisis: Dashboard, Tabla (Gasto anual), Histórico, Préstamos, Extra
-import { Store } from './store.js';
-import * as C from './calc.js';
+import { Store } from './store.js?v=1.5.2';
+import * as C from './calc.js?v=1.5.2';
 import { $, $$, esc, eur, eur0, pct, fecha, cls, css, makeChart, axisEur, compactEur, donutCard, modal, toast, confirmDlg,
-  showEur, showPct, fmtMode, dispPicker, bindPickers, MASK } from './ui.js';
-import { colorGrupo, colorSub, colorOtros, familia, tint, fixed } from './colors.js';
-import { leerHoja, parseCuadro } from './importer.js';
+  showEur, showPct, fmtMode, dispPicker, bindPickers, MASK } from './ui.js?v=1.5.2';
+import { colorGrupo, colorSub, colorOtros, familia, tint, fixed } from './colors.js?v=1.5.2';
+import { leerHoja, parseCuadro } from './importer.js?v=1.5.2';
 
 const D = () => Store.data;
 const neg = (v) => -(v || 0);

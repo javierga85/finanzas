@@ -1,9 +1,9 @@
-import { Store, emptyData } from './store.js';
-import * as C from './calc.js';
-import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults, MODOS } from './ui.js';
-import { colorSub, familia, tint } from './colors.js';
-import { renderDashboard, renderTabla, renderHistorico, renderPrestamos, renderExtra } from './views.js';
-import { leerHoja, parseExtracto } from './importer.js';
+import { Store, emptyData } from './store.js?v=1.5.2';
+import * as C from './calc.js?v=1.5.2';
+import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults, MODOS } from './ui.js?v=1.5.2';
+import { colorSub, familia, tint } from './colors.js?v=1.5.2';
+import { renderDashboard, renderTabla, renderHistorico, renderPrestamos, renderExtra } from './views.js?v=1.5.2';
+import { leerHoja, parseExtracto } from './importer.js?v=1.5.2';
 
 const D = () => Store.data;
 const ICON = {
@@ -497,5 +497,8 @@ function renderAjustes(main) {
 }
 
 /* ===================== Arranque ===================== */
+// Cualquier error inesperado se muestra en pantalla (antes fallaba en silencio)
+window.addEventListener('error', (e) => toast('⚠️ Error: ' + (e.message || e.error), 6000));
+window.addEventListener('unhandledrejection', (e) => toast('⚠️ Error: ' + (e.reason?.message || e.reason), 6000));
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(console.warn);
 lockScreen();
