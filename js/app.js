@@ -42,7 +42,7 @@ function lockScreen() {
   const lock = $('#lock'); lock.classList.remove('hidden');
   const creating = !Store.hasPin();
   let pin = '', first = null, fails = 0;
-  lock.innerHTML = `<div class="lock-card"><div class="lock-logo">€</div><h1>Mis Finanzas</h1>
+  lock.innerHTML = `<div class="lock-card"><div class="lock-logo"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#000"/><g fill="none" stroke="#fff" stroke-width="10"><path d="M67.32 40.00A20 20 0 1 1 45.84 30.44"/><path d="M53.92 26.00A20 20 0 0 1 66.69 32.51"/></g></svg></div><h1>Mis Finanzas</h1>
     <p id="lkMsg">${creating ? 'Crea un PIN de 4 a 6 dígitos' : 'Introduce tu PIN'}</p>
     <div class="pin-dots" id="dots"></div>
     <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join('')}<button class="ghost" data-k="del">Borrar</button><button data-k="0">0</button><button class="ghost" data-k="ok"><b>OK</b></button></div>
