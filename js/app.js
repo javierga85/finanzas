@@ -38,6 +38,7 @@ const ctx = { state, saveUi: () => saveUi(), mode: (k) => state.dispOv[k] || sta
 
 /* ===================== Bloqueo con PIN ===================== */
 function lockScreen() {
+  document.querySelector('.imp-panel')?.remove(); document.body.classList.remove('with-panel', 'panel-min');
   destroyCharts(); $('#app').classList.add('hidden');
   const lock = $('#lock'); lock.classList.remove('hidden');
   const creating = !Store.hasPin();
@@ -144,9 +145,23 @@ function updateSync() {
   b.title = Store.statusMsg || (st === 'off' ? 'Configura GitHub en Ajustes para sincronizar' : '');
 }
 
+/** Ajustes de datos de versiones anteriores. Devuelve true si cambió algo que haya que guardar. */
+function migrar() {
+  const d = D(); let cambio = false;
+  if (!d.catalogo.SE) { d.catalogo.SE = ['Sin efecto']; cambio = true; }
+  d.migr ||= {};
+  if (!d.migr.fechas14) {
+    // v1.0–1.4 importaban Fecha y F.Valor al revés que tu Excel: se corrigen los movimientos importados desde la app
+    d.movimientos.forEach(m => { if (!/^m\d{4}$/.test(m.id) && !m.manual && m.fvalor && m.fecha > m.fvalor) { [m.fecha, m.fvalor] = [m.fvalor, m.fecha]; } });
+    d.migr.fechas14 = true; cambio = true;
+  }
+  return cambio;
+}
+
 function render() {
   if (!Store.key) return;
   D().ajustes = { autoLock: 5, tema: 'auto', ...(D().ajustes || {}) }; delete D().ajustes.ingresosMayorVerde;
+  if (migrar()) { Store.commit('Actualización de datos v1.5'); return; }
   destroyCharts();
   const v = VIEWS.find(x => x.k === state.view);
   $('#title').textContent = v ? v.t : 'Ajustes';
@@ -185,12 +200,27 @@ function subgrupoSelect(id, sel, allowEmpty = true) {
   const cat = D().catalogo;
   return `<select id="${id}">${allowEmpty ? `<option value="">— Sin clasificar —</option>` : ''}${Object.entries(C.GRUPOS).map(([g, n]) => `<optgroup label="${n}">${(cat[g] || []).map(s => `<option value="${esc(s)}" ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`).join('')}</select>`;
 }
+/** Formato de mes asignado: "2026 Oct". */
+const mesCorto = (anio, mes) => anio && mes ? `${anio} ${C.MESES_C[mes - 1]}` : 'Sin mes';
+/** Desplegable Año-Mes ("2026 Oct"). value = "AAAA-MM". Ofrece desde 2 años antes hasta 1 después de la referencia. */
+function mesSelect(attrs, value, refAnio) {
+  const y0 = (value ? +value.slice(0, 4) : refAnio || new Date().getFullYear());
+  let opts = '<option value="">— Sin mes —</option>';
+  for (let y = y0 + 1; y >= y0 - 2; y--) for (let m = 12; m >= 1; m--) {
+    const v = `${y}-${String(m).padStart(2, '0')}`; opts += `<option value="${v}" ${v === value ? 'selected' : ''}>${mesCorto(y, m)}</option>`;
+  }
+  return `<select ${attrs}>${opts}</select>`;
+}
+const impDiv = (m) => `${(m.importe || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${esc(m.divisa || 'EUR')}`;
 function movCard(m, rep, extra = '') {
   const fc = m.subgrupo ? colorSub(D(), m.subgrupo) : 'var(--warn)';
-  return `<div class="mov" data-id="${m.id}" style="box-shadow:inset 4px 0 0 ${fc}">${extra}<div class="t">${esc(m.concepto2 || m.concepto || m.movimiento)}</div><div class="a num ${cls(m.importe)}">${eur(m.importe)}</div>
-    <div class="m">${fecha(m.fecha)} · ${esc(m.concepto)}${m.movimiento ? ' · ' + esc(m.movimiento) : ''}</div><div></div>
-    <div class="tags">${m.subgrupo ? `<span class="tag" style="background:${tint(fc, 22)}"><span class="sw" style="background:${fc}"></span>${esc(C.GRUPOS[m.grupo] || '')} › ${esc(m.subgrupo)}</span>` : '<span class="tag warn">Sin clasificar</span>'}
-    ${m.mes && m.anio ? `<span class="tag">${C.MESES_C[m.mes - 1]} ${m.anio}</span>` : '<span class="tag warn">Sin mes</span>'}${rep.has(m.id) ? '<span class="tag bad">R · posible repetido</span>' : ''}</div></div>`;
+  const se = m.grupo === 'SE';
+  return `<div class="mov mv3 ${se ? 'se' : ''}" data-id="${m.id}" style="box-shadow:inset 4px 0 0 ${fc}">${extra}
+    <div class="r1"><span class="imp num ${se ? '' : cls(m.importe)}">${impDiv(m)}</span><span class="c2 ${m.concepto2 ? '' : 'muted'}">${esc(m.concepto2 || 'Sin concepto 2')}</span></div>
+    <div class="r2">${m.mes && m.anio ? `<span class="tag">${mesCorto(m.anio, m.mes)}</span>` : '<span class="tag warn">Sin mes</span>'}
+      ${m.subgrupo ? `<span class="tag" style="background:${tint(fc, 22)}"><span class="sw" style="background:${fc}"></span>${esc(C.GRUPOS[m.grupo] || '')} › ${esc(m.subgrupo)}</span>` : '<span class="tag warn">Sin clasificar</span>'}
+      ${rep.has(m.id) ? '<span class="tag bad">R · posible repetido</span>' : ''}</div>
+    <div class="r3">${fecha(m.fecha)} · ${esc(m.concepto)}${m.movimiento ? ' · ' + esc(m.movimiento) : ''}</div></div>`;
 }
 
 function renderMovs(main) {
@@ -203,7 +233,7 @@ function renderMovs(main) {
     if (f.anio && m.anio !== +f.anio) return false;
     if (f.mes && m.mes !== +f.mes) return false;
     if (f.grupo && m.grupo !== f.grupo) return false;
-    if (f.q) { const q = f.q.toLowerCase(); if (![m.concepto, m.movimiento, m.concepto2, m.subgrupo, String(m.importe)].some(x => (x || '').toLowerCase().includes(q))) return false; }
+    if (f.q) { const q = f.q.toLowerCase(); if (![m.concepto, m.movimiento, m.concepto2, m.subgrupo, m.observaciones, m.importe].some(x => String(x ?? '').toLowerCase().includes(q))) return false; }
     return true;
   }).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
   const total = list.reduce((s, m) => s + m.importe, 0);
@@ -250,16 +280,15 @@ async function editarMov(m) {
     <div class="row"><label>Importe (gasto en negativo)<input type="number" step="0.01" id="eI" value="${m.importe}"></label><label>Divisa<input type="text" id="eD" value="${esc(m.divisa)}"></label></div>
     <label>Concepto 2 (tu descripción)<input type="text" id="eC2" value="${esc(m.concepto2)}" placeholder="¿De dónde viene?"></label>
     <label>Grupo › Subgrupo${subgrupoSelect('eS', m.subgrupo)}</label>
-    <div class="row"><label>Mes asignado<select id="eMes"><option value="">—</option>${C.MESES.map((n, i) => `<option value="${i + 1}" ${m.mes === i + 1 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-      <label>Año asignado<input type="number" id="eA" value="${m.anio || ''}"></label></div>
+    <label>Año Mes asignado${mesSelect('id="eMM"', m.anio && m.mes ? `${m.anio}-${String(m.mes).padStart(2, '0')}` : '', +(m.fecha || '').slice(0, 4))}</label>
   </div>
   <div class="actions">${nuevo ? '' : '<button class="btn danger left" id="eDel">Eliminar</button><button class="btn ghost" id="eRule" title="Guarda el movimiento y crea una regla con su concepto">Guardar y crear regla</button>'}<button class="btn ghost" id="eX">Cancelar</button><button class="btn primary" id="eOk">Guardar</button></div>`,
     (s, close) => {
-      $('#eS', s).onchange = () => { if (!$('#eMes', s).value && $('#eF', s).value) { const r = C.matchRule(D(), { concepto: $('#eC', s).value, movimiento: $('#eM', s).value }); const d = C.mesAnioPorDefecto($('#eF', s).value, r?.mesSiguiente); $('#eMes', s).value = d.mes; $('#eA', s).value = d.anio; } };
+      $('#eS', s).onchange = () => { if (!$('#eMM', s).value && $('#eF', s).value) { const r = C.matchRule(D(), { concepto: $('#eC', s).value, movimiento: $('#eM', s).value }); const d = C.mesAnioPorDefecto($('#eF', s).value, r?.mesSiguiente); $('#eMM', s).value = `${d.anio}-${String(d.mes).padStart(2, '0')}`; } };
       $('#eX', s).onclick = () => close();
       const read = () => {
         const sub = $('#eS', s).value || null;
-        return { ...m, fecha: $('#eF', s).value, fvalor: $('#eFV', s).value || $('#eF', s).value, concepto: $('#eC', s).value.trim(), movimiento: $('#eM', s).value.trim(), importe: Math.round(parseFloat($('#eI', s).value || 0) * 100) / 100, divisa: $('#eD', s).value || 'EUR', concepto2: $('#eC2', s).value.trim(), subgrupo: sub, grupo: sub ? C.grupoDeSubgrupo(D(), sub) : null, mes: +$('#eMes', s).value || null, anio: +$('#eA', s).value || null, ...($('#eNR', s)?.checked ? { noRepetido: true } : {}) };
+        return { ...m, fecha: $('#eF', s).value, fvalor: $('#eFV', s).value || $('#eF', s).value, concepto: $('#eC', s).value.trim(), movimiento: $('#eM', s).value.trim(), importe: Math.round(parseFloat($('#eI', s).value || 0) * 100) / 100, divisa: $('#eD', s).value || 'EUR', concepto2: $('#eC2', s).value.trim(), subgrupo: sub, grupo: sub ? C.grupoDeSubgrupo(D(), sub) : null, mes: $('#eMM', s).value ? +$('#eMM', s).value.slice(5) : null, anio: $('#eMM', s).value ? +$('#eMM', s).value.slice(0, 4) : null, ...($('#eNR', s)?.checked ? { noRepetido: true } : {}) };
       };
       $('#eOk', s).onclick = async () => {
         const v = read(); if (!v.fecha) return alert('Indica la fecha');
@@ -278,45 +307,72 @@ async function editarMov(m) {
     });
 }
 
-/* ---------- Importación de extracto ---------- */
+/* ---------- Importación de extracto (panel lateral, no bloquea la lista para poder comparar) ---------- */
+let impPanel = null;
+function cerrarPanel() { impPanel?.remove(); impPanel = null; document.body.classList.remove('with-panel', 'panel-min'); }
+
 async function importarExtracto(file) {
   if (!file) return;
+  if (impPanel && !(await confirmDlg('Importación en curso', 'Ya tienes una importación abierta sin guardar. ¿Descartarla y abrir el nuevo fichero?', 'Descartar', true))) return;
+  cerrarPanel();
   let filas;
   try { filas = parseExtracto(await leerHoja(file)); } catch (e) { return alert('No se pudo leer el fichero: ' + e.message); }
   if (!filas.length) return alert('No he encontrado movimientos en el fichero.');
-  const existentes = new Set(D().movimientos.map(C.claveRepetido)); const lote = new Set();
-  const nuevos = filas.map(r => {
-    const m = C.clasificar(D(), { id: newId(), ...r, concepto2: '', grupo: null, subgrupo: null, mes: null, anio: null });
-    delete m.observaciones;
-    const k = C.claveRepetido(m); m._rep = existentes.has(k) || lote.has(k); lote.add(k); m._inc = !m._rep; m._obs = r.observaciones;
-    return m;
-  });
+  const nuevos = filas.map(r => C.clasificar(D(), { id: newId(), ...r, concepto2: '', grupo: null, subgrupo: null, mes: null, anio: null }));
+  const match = C.emparejarImportacion(D().movimientos, nuevos);
+  nuevos.forEach((m, i) => { m._repId = match[i] && match[i] !== 'lote' ? match[i] : null; m._rep = !!match[i]; m._inc = !m._rep; });
   const nRep = nuevos.filter(m => m._rep).length, nCl = nuevos.filter(m => m.subgrupo).length;
-  await modal(`<h2>Revisar importación</h2>
-    <p class="small ink2">${nuevos.length} movimientos leídos · ${nCl} clasificados automáticamente · <b>${nRep} posibles repetidos</b> (desmarcados). Completa el <b>Concepto 2</b> y revisa grupo y mes antes de guardar.</p>
-    <div class="toolbar"><button class="chip" id="selAll">Marcar todos</button><button class="chip" id="selNone">Desmarcar todos</button></div>
-    <div class="mov-list" id="impList">${nuevos.map((m, i) => `<div class="mov" style="cursor:default;grid-template-columns:auto 1fr auto" data-i="${i}">
-      <input type="checkbox" class="inc" ${m._inc ? 'checked' : ''} style="grid-row:span 2">
-      <div class="t">${esc(m.concepto)}</div><div class="a num ${cls(m.importe)}">${eur(m.importe)}</div>
-      <div class="m" style="grid-column:2/4">${fecha(m.fecha)} · ${esc(m.movimiento)}${m._obs ? ' · ' + esc(m._obs) : ''} ${m._rep ? '<span class="tag bad">R · ya existe</span>' : ''}</div>
-      <div class="form" style="grid-column:1/-1;margin-top:6px;gap:6px"><input type="text" class="c2" placeholder="Concepto 2 (de dónde viene)" value="">
-        <div class="row" style="grid-template-columns:1fr auto">${subgrupoSelect('s' + i, m.subgrupo).replace('<select', '<select class="sg"')}<input type="month" class="mm" value="${m.anio ? `${m.anio}-${String(m.mes).padStart(2, '0')}` : ''}"></div></div></div>`).join('')}</div>
-    <div class="actions"><button class="btn ghost" id="iX">Cancelar</button><button class="btn primary" id="iOk">Importar seleccionados</button></div>`,
-    (s, close) => {
-      $('#selAll', s).onclick = () => $$('.inc', s).forEach(c => c.checked = true);
-      $('#selNone', s).onclick = () => $$('.inc', s).forEach(c => c.checked = false);
-      $('#iX', s).onclick = () => close();
-      $('#iOk', s).onclick = async () => {
-        let n = 0;
-        $$('#impList .mov', s).forEach(el => {
-          const m = nuevos[+el.dataset.i]; if (!$('.inc', el).checked) return;
-          const sub = $('.sg', el).value || null; const mm = $('.mm', el).value;
-          const out = { id: m.id, fecha: m.fecha, fvalor: m.fvalor, concepto: m.concepto, movimiento: m.movimiento, importe: m.importe, divisa: m.divisa, concepto2: $('.c2', el).value.trim(), subgrupo: sub, grupo: sub ? C.grupoDeSubgrupo(D(), sub) : null, mes: mm ? +mm.slice(5) : null, anio: mm ? +mm.slice(0, 4) : null };
-          D().movimientos.push(out); n++;
-        });
-        await Store.commit(`Importar ${n} movimientos`); close(); toast(`${n} movimientos importados`); state.mv.estado = ''; render();
-      };
+  impPanel = document.createElement('aside'); impPanel.className = 'imp-panel'; impPanel.setAttribute('aria-label', 'Revisar importación');
+  impPanel.innerHTML = `<div class="imp-head"><div><h2>Revisar importación</h2>
+      <p class="small ink2">${nuevos.length} leídos · ${nCl} clasificados · <b>${nRep} posibles repetidos</b> (desmarcados). Toca <b>R</b> para ver el original en la lista.</p></div>
+      <button class="iconbtn" id="iMin" title="Minimizar">▁</button></div>
+    <div class="toolbar"><button class="chip" id="selAll">Marcar todos</button><button class="chip" id="selNone">Desmarcar todos</button><span class="grow"></span><span class="small muted" id="iCnt"></span></div>
+    <div class="mov-list" id="impList">${nuevos.map((m, i) => { const mm = m.anio ? `${m.anio}-${String(m.mes).padStart(2, '0')}` : ''; return `<div class="mov imp4 ${m._rep ? 'is-rep' : ''}" data-i="${i}">
+      <div class="r1"><input type="checkbox" class="inc" ${m._inc ? 'checked' : ''} aria-label="Importar"><span class="imp num ${cls(m.importe)}">${impDiv(m)}</span><span class="t">${esc(m.concepto)}</span><span class="mv muted">${esc(m.movimiento)}</span></div>
+      <div class="r2">${m._rep ? `<button class="tag bad rflag" title="${m._repId ? 'Ver el movimiento que ya existe' : 'Repetido dentro de este mismo fichero'}">R · ${m._repId ? 'ya existe' : 'repetido en el fichero'}</button>` : '<span class="tag ok">Nuevo</span>'}<span class="tag ftag" title="Fecha del movimiento">${fecha(m.fecha)}</span><span class="obs muted">${esc(m.observaciones || '')}</span></div>
+      <input type="text" class="c2" placeholder="Concepto 2 (de dónde viene)">
+      <div class="r4">${subgrupoSelect('s' + i, m.subgrupo).replace('<select', '<select class="sg"')}${mesSelect('class="mm" aria-label="Año Mes"', mm, +m.fecha.slice(0, 4))}</div></div>`; }).join('')}</div>
+    <div class="actions"><button class="btn ghost" id="iX">Cancelar</button><button class="btn primary" id="iOk">Importar seleccionados</button></div>
+    <button class="imp-min-bar" id="iMax">⬆︎ Importación en curso · ${nuevos.length} movimientos · Abrir</button>`;
+  document.body.appendChild(impPanel); document.body.classList.add('with-panel');
+  const s = impPanel;
+  const count = () => { $('#iCnt', s).textContent = `${$$('.inc:checked', s).length} seleccionados`; };
+  count();
+  $('#selAll', s).onclick = () => { $$('.inc', s).forEach(c => c.checked = true); count(); };
+  $('#selNone', s).onclick = () => { $$('.inc', s).forEach(c => c.checked = false); count(); };
+  $$('.inc', s).forEach(c => c.onchange = count);
+  $('#iMin', s).onclick = () => document.body.classList.add('panel-min');
+  $('#iMax', s).onclick = () => document.body.classList.remove('panel-min');
+  $$('#impList .mov', s).forEach(el => {
+    const m = nuevos[+el.dataset.i];
+    $('.sg', el).onchange = (e) => {
+      el.classList.toggle('se', C.grupoDeSubgrupo(D(), e.target.value) === 'SE');
+      if (!$('.mm', el).value) { const r = C.matchRule(D(), m); const d = C.mesAnioPorDefecto(m.fecha, r?.mesSiguiente); $('.mm', el).value = `${d.anio}-${String(d.mes).padStart(2, '0')}`; }
+    };
+    const rf = $('.rflag', el);
+    if (rf) rf.onclick = () => {
+      // Mostrar en la lista de la izquierda el movimiento que ya existe
+      const orig = D().movimientos.find(x => x.id === m._repId);
+      Object.assign(state.mv, { q: (orig || m).concepto, anio: '', mes: '', grupo: '', estado: '', limit: 200 });
+      if (state.view !== 'movs') state.view = 'movs';
+      render();
+      const card = orig && document.querySelector(`#main .mov[data-id="${orig.id}"]`);
+      if (card) { card.classList.add('sel'); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      if (window.innerWidth < 900) document.body.classList.add('panel-min');
+    };
+  });
+  $('#iX', s).onclick = async () => { if (await confirmDlg('Cancelar importación', 'No se guardará ningún movimiento de este fichero.', 'Descartar', true)) cerrarPanel(); };
+  $('#iOk', s).onclick = async () => {
+    let n = 0;
+    $$('#impList .mov', s).forEach(el => {
+      const m = nuevos[+el.dataset.i]; if (!$('.inc', el).checked) return;
+      const sub = $('.sg', el).value || null; const mm = $('.mm', el).value;
+      D().movimientos.push({ id: m.id, fecha: m.fecha, fvalor: m.fvalor, concepto: m.concepto, movimiento: m.movimiento, importe: m.importe, divisa: m.divisa, observaciones: m.observaciones || '', concepto2: $('.c2', el).value.trim(), subgrupo: sub, grupo: sub ? C.grupoDeSubgrupo(D(), sub) : null, mes: mm ? +mm.slice(5) : null, anio: mm ? +mm.slice(0, 4) : null });
+      n++;
     });
+    cerrarPanel(); state.mv = { ...state.mv, q: '', estado: '', limit: 60 };
+    await Store.commit(`Importar ${n} movimientos`); toast(`${n} movimientos importados`); render();
+  };
 }
 
 /* ===================== Ajustes ===================== */

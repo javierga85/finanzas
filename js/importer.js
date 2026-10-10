@@ -52,6 +52,8 @@ export function parseExtracto(rows) {
     concepto: idx(h, 'concepto'), movimiento: idx(h, 'movimiento', 'descripcion'),
     importe: idx(h, 'importe'), divisa: idx(h, 'divisa', 'moneda'), obs: idx(h, 'observaciones')
   };
+  // Convención de tu Excel: "Fecha" = 1ª columna de fecha del extracto y "F.Valor" = 2ª (BBVA las rotula al revés).
+  if (c.fecha >= 0 && c.fvalor >= 0) { const a = Math.min(c.fecha, c.fvalor), b = Math.max(c.fecha, c.fvalor); c.fecha = a; c.fvalor = b; }
   const out = [];
   for (let i = hi + 1; i < rows.length; i++) {
     const r = rows[i]; if (!r) continue;

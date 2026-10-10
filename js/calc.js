@@ -1,7 +1,9 @@
 // Lógica de negocio: clasificación, repetidos y agregaciones.
 export const GRUPOS = {
-  ING: 'Ingreso mensual', GMF: 'Gasto mensual fijo', GAF: 'Gasto anual fijo', GEX: 'Gasto Extra', OOC: 'Out of Context'
+  ING: 'Ingreso mensual', GMF: 'Gasto mensual fijo', GAF: 'Gasto anual fijo', GEX: 'Gasto Extra', OOC: 'Out of Context', SE: 'Sin efecto'
 };
+/** Grupos que no cuentan en ningún balance. */
+export const FUERA_BALANCE = new Set(['OOC', 'SE']);
 export const SUB = { SAL: 'Salario neto', EXT: 'Dinero extra ingresado', PRE: 'Preahorro', EFE: 'Gastos varios (efectivo)' };
 export const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 export const MESES_C = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -39,23 +41,47 @@ export function clasificar(data, mov, { forzar = false } = {}) {
   return mov;
 }
 
-export const claveRepetido = (m) => [m.fvalor, norm(m.concepto), norm(m.movimiento), r2(m.importe)].join('|');
+// ---- Detección de repetidos ----
+// Base: misma pareja de fechas (Fecha/F.Valor en cualquier orden) e importe.
+// Además Concepto y Movimiento deben ser "compatibles": iguales, o uno empieza por el otro
+// (BBVA a veces acorta o cambia el texto, p. ej. "Mpass madrid es" → "Mpass", "13012 / mad getafe madrid es" → "13012 / mad getafe").
+const compacto = (s) => norm(s).replace(/[^a-z0-9ñ]/g, '');
+const compatibles = (a, b) => { const x = compacto(a), y = compacto(b); return !x || !y || x.startsWith(y) || y.startsWith(x); };
+export const claveBase = (m) => { const f = [m.fecha || '', m.fvalor || m.fecha || ''].sort(); return [f[0], f[1], r2(m.importe)].join('|'); };
+export const mismoMovimiento = (a, b) => claveBase(a) === claveBase(b) && compatibles(a.concepto, b.concepto) && compatibles(a.movimiento, b.movimiento);
+export const claveRepetido = claveBase;
 
-/** Set de ids marcados como repetidos (todas las apariciones salvo la primera). */
+/** Set de ids marcados como posibles repetidos (todas las apariciones salvo la primera). */
 export function repetidos(movs) {
-  const seen = new Map(), rep = new Set();
+  const grupos = new Map(), rep = new Set();
   for (const m of movs) {
-    const k = claveRepetido(m);
-    if (seen.has(k)) { if (!m.noRepetido) rep.add(m.id); }
-    else seen.set(k, m.id);
+    const k = claveBase(m); const prev = grupos.get(k) || [];
+    if (prev.some(p => mismoMovimiento(p, m))) { if (!m.noRepetido) rep.add(m.id); }
+    else prev.push(m);
+    grupos.set(k, prev);
   }
   return rep;
+}
+
+/** Para una importación: devuelve, por cada fila nueva, el id del movimiento existente con el que coincide
+ *  (cada existente solo se empareja una vez), 'lote' si se repite dentro del propio fichero, o null. */
+export function emparejarImportacion(existentes, nuevos) {
+  const pool = new Map();
+  existentes.forEach(m => { const k = claveBase(m); (pool.get(k) || pool.set(k, []).get(k)).push(m); });
+  const vistos = [];
+  return nuevos.map(n => {
+    const lista = pool.get(claveBase(n)) || [];
+    const i = lista.findIndex(e => mismoMovimiento(e, n));
+    if (i >= 0) { const e = lista.splice(i, 1)[0]; return e.id; }
+    if (vistos.some(v => mismoMovimiento(v, n))) return 'lote';
+    vistos.push(n); return null;
+  });
 }
 
 export const valido = (m) => m.subgrupo && m.grupo && m.mes && m.anio;
 
 export function aniosConMovs(data) {
-  const s = new Set(); data.movimientos.forEach(m => { if (valido(m) && m.grupo !== 'OOC') s.add(m.anio); });
+  const s = new Set(); data.movimientos.forEach(m => { if (valido(m) && !FUERA_BALANCE.has(m.grupo)) s.add(m.anio); });
   return [...s].sort((a, b) => a - b);
 }
 
@@ -63,7 +89,7 @@ export function aniosConMovs(data) {
 export function cubo(data) {
   const c = {};
   for (const m of data.movimientos) {
-    if (!valido(m) || m.grupo === 'OOC') continue;
+    if (!valido(m) || FUERA_BALANCE.has(m.grupo)) continue;
     const y = (c[m.anio] ||= {}); const mm = (y[m.mes] ||= {});
     mm[m.subgrupo] = (mm[m.subgrupo] || 0) + m.importe;
     mm['§' + m.grupo] = (mm['§' + m.grupo] || 0) + m.importe;

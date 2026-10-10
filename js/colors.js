@@ -14,7 +14,8 @@ const RAMP = {
   GMF: { h: 24, s: 85, l: [34, 68] },
   GAF: { h: 212, s: 66, l: [28, 70] },
   GEX: { h: 350, s: 58, l: [24, 58] },
-  OOC: { h: 40, s: 4, l: [34, 72] }
+  OOC: { h: 40, s: 4, l: [34, 72] },
+  SE: { h: 260, s: 6, l: [45, 70] }
 };
 // Colores fijos de conceptos clave
 const FIX = {
@@ -29,6 +30,8 @@ const FIX = {
   GAF: { light: '#2a6fc9', dark: '#4a8de0' },
   GEX: { light: '#8e2436', dark: '#c0485d' },
   OOC: { light: '#8a8984', dark: '#9b9a95' },
+  SE: { light: '#b9b6c2', dark: '#6f6c78' },
+  'Sin efecto': { light: '#b9b6c2', dark: '#6f6c78' },
   GASTOS: { light: '#c8501a', dark: '#e0703a' }         // gasto total (mezcla de familias)
 };
 
