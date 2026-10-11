@@ -1,6 +1,6 @@
 // Service worker: red primero (revalidando siempre con el servidor) y caché solo como respaldo sin conexión.
 // Nunca cachea la API de GitHub.
-const VER = '1.5.2';
+const VER = '1.6.0';
 const CACHE = 'finanzas-v' + VER;
 const SHELL = ['./', './index.html', './styles.css?v=' + VER, './js/app.js?v=' + VER, './js/store.js?v=' + VER, './js/calc.js?v=' + VER, './js/ui.js?v=' + VER, './js/views.js?v=' + VER, './js/importer.js?v=' + VER, './js/colors.js?v=' + VER,
   './vendor/chart.umd.js', './vendor/xlsx.full.min.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];

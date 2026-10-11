@@ -1,9 +1,9 @@
-import { Store, emptyData } from './store.js?v=1.5.2';
-import * as C from './calc.js?v=1.5.2';
-import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults, MODOS } from './ui.js?v=1.5.2';
-import { colorSub, familia, tint } from './colors.js?v=1.5.2';
-import { renderDashboard, renderTabla, renderHistorico, renderPrestamos, renderExtra } from './views.js?v=1.5.2';
-import { leerHoja, parseExtracto } from './importer.js?v=1.5.2';
+import { Store, emptyData } from './store.js?v=1.6.0';
+import * as C from './calc.js?v=1.6.0';
+import { $, $$, esc, eur, fecha, cls, toast, modal, confirmDlg, choiceDlg, download, destroyCharts, chartDefaults, MODOS } from './ui.js?v=1.6.0';
+import { colorSub, familia, tint } from './colors.js?v=1.6.0';
+import { renderDashboard, renderTabla, renderHistorico, renderPrestamos, renderExtra } from './views.js?v=1.6.0';
+import { leerHoja, parseExtracto } from './importer.js?v=1.6.0';
 
 const D = () => Store.data;
 const ICON = {
@@ -19,10 +19,10 @@ const ICON = {
 const VIEWS = [
   { k: 'dash', n: 'Dashboard', t: 'Dashboard', r: renderDashboard },
   { k: 'tabla', n: 'Tabla', t: 'Gasto anual', r: renderTabla },
-  { k: 'hist', n: 'Histórico', t: 'Histórico', r: renderHistorico },
   { k: 'loan', n: 'Préstamos', t: 'Hipoteca y préstamos', r: renderPrestamos },
   { k: 'extra', n: 'Extra', t: 'Out of Context', r: renderExtra },
-  { k: 'movs', n: 'Movimientos', t: 'Extracciones', r: renderMovs }
+  { k: 'movs', n: 'Movimientos', t: 'Extracciones', r: renderMovs },
+  { k: 'hist', n: 'Histórico', t: 'Histórico', r: renderHistorico }
 ];
 
 const state = {
@@ -32,7 +32,7 @@ const state = {
   mv: { q: '', anio: '', mes: '', grupo: '', estado: '', limit: 60 }
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('fz_ui') || '{}'), { mv: { ...state.mv, limit: 60 } }); } catch { }
-const saveUi = () => { try { const { view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv } = state; localStorage.setItem('fz_ui', JSON.stringify({ view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv })); } catch { } };
+const saveUi = () => { try { const { view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv, dashMes } = state; localStorage.setItem('fz_ui', JSON.stringify({ view, tabla, ocultarVacias, lines, groups, histCat, histModo, disp, dispOv, dashMes })); } catch { } };
 
 const ctx = { state, saveUi: () => saveUi(), mode: (k) => state.dispOv[k] || state.disp, rerender: () => render(), openMov: (id) => editarMov(D().movimientos.find(m => m.id === id)), showMovList };
 
@@ -239,7 +239,7 @@ function renderMovs(main) {
   const total = list.reduce((s, m) => s + m.importe, 0);
   main.innerHTML = `
   <div class="toolbar"><label class="btn primary">⬆︎ Importar extracto<input type="file" id="impF" accept=".xlsx,.xls,.csv" hidden></label>
-    <button class="btn ghost" id="newMov">＋ Manual</button><span class="grow"></span>
+    <button class="btn ghost" id="newMov">＋ Manual</button><button class="btn ghost" id="expX" title="Exporta a Excel los movimientos que ves (respeta los filtros)">⬇︎ Exportar Excel</button><span class="grow"></span>
     <button class="chip ${f.estado === 'pend' ? 'on' : ''}" data-e="pend">Sin clasificar · ${nPend}</button><button class="chip ${f.estado === 'rep' ? 'on' : ''}" data-e="rep">Repetidos · ${rep.size}</button></div>
   <div class="toolbar"><input type="text" id="mvQ" placeholder="Buscar…" value="${esc(f.q)}" style="flex:1;min-width:140px">
     <select id="mvA"><option value="">Año</option>${years.map(y => `<option ${+f.anio === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
@@ -250,6 +250,7 @@ function renderMovs(main) {
   ${list.length > f.limit ? `<div style="text-align:center;margin:14px"><button class="btn ghost" id="more">Ver más (${list.length - f.limit})</button></div>` : ''}`;
   $('#impF', main).onchange = (e) => importarExtracto(e.target.files[0]);
   $('#newMov', main).onclick = () => editarMov(null);
+  $('#expX', main).onclick = () => exportarExcel(list, rep);
   $$('[data-e]', main).forEach(b => b.onclick = () => { f.estado = f.estado === b.dataset.e ? '' : b.dataset.e; f.limit = 60; render(); });
   let qt; $('#mvQ', main).oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { f.q = e.target.value; f.limit = 60; render(); const i = $('#mvQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 300); };
   $('#mvA', main).onchange = (e) => { f.anio = e.target.value; render(); };
@@ -327,10 +328,11 @@ async function importarExtracto(file) {
       <p class="small ink2">${nuevos.length} leídos · ${nCl} clasificados · <b>${nRep} posibles repetidos</b> (desmarcados). Toca <b>R</b> para ver el original en la lista.</p></div>
       <button class="iconbtn" id="iMin" title="Minimizar">▁</button></div>
     <div class="toolbar"><button class="chip" id="selAll">Marcar todos</button><button class="chip" id="selNone">Desmarcar todos</button><span class="grow"></span><span class="small muted" id="iCnt"></span></div>
+    <div class="note warnbox hidden" id="iWarn"></div>
     <div class="mov-list" id="impList">${nuevos.map((m, i) => { const mm = m.anio ? `${m.anio}-${String(m.mes).padStart(2, '0')}` : ''; return `<div class="mov imp4 ${m._rep ? 'is-rep' : ''}" data-i="${i}">
       <div class="r1"><input type="checkbox" class="inc" ${m._inc ? 'checked' : ''} aria-label="Importar"><span class="imp num ${cls(m.importe)}">${impDiv(m)}</span><span class="t">${esc(m.concepto)}</span><span class="mv muted">${esc(m.movimiento)}</span></div>
       <div class="r2">${m._rep ? `<button class="tag bad rflag" title="${m._repId ? 'Ver el movimiento que ya existe' : 'Repetido dentro de este mismo fichero'}">R · ${m._repId ? 'ya existe' : 'repetido en el fichero'}</button>` : '<span class="tag ok">Nuevo</span>'}<span class="tag ftag" title="Fecha del movimiento">${fecha(m.fecha)}</span><span class="obs muted">${esc(m.observaciones || '')}</span></div>
-      <input type="text" class="c2" placeholder="Concepto 2 (de dónde viene)">
+      <input type="text" class="c2" placeholder="Concepto 2 (de dónde viene)"><div class="aviso"></div>
       <div class="r4">${subgrupoSelect('s' + i, m.subgrupo).replace('<select', '<select class="sg"')}${mesSelect('class="mm" aria-label="Año Mes"', mm, +m.fecha.slice(0, 4))}</div></div>`; }).join('')}</div>
     <div class="actions"><button class="btn ghost" id="iX">Cancelar</button><button class="btn primary" id="iOk">Importar seleccionados</button></div>
     <button class="imp-min-bar" id="iMax">⬆︎ Importación en curso · ${nuevos.length} movimientos · Abrir</button>`;
@@ -362,7 +364,34 @@ async function importarExtracto(file) {
     };
   });
   $('#iX', s).onclick = async () => { if (await confirmDlg('Cancelar importación', 'No se guardará ningún movimiento de este fichero.', 'Descartar', true)) cerrarPanel(); };
+  // Marca en rojo los campos obligatorios vacíos de las filas seleccionadas
+  const faltan = (el) => {
+    const f = { sg: !$('.sg', el).value, mm: !$('.mm', el).value, c2: !$('.c2', el).value.trim() };
+    const sel = $('.inc', el).checked;
+    Object.entries(f).forEach(([k, v]) => $('.' + k, el).classList.toggle('campo-falta', sel && v));
+    const any = sel && (f.sg || f.mm || f.c2);
+    el.classList.toggle('falta', any);
+    $('.aviso', el).textContent = any ? 'Falta: ' + [f.sg && 'Grupo › Subgrupo', f.mm && 'Año Mes', f.c2 && 'Concepto 2'].filter(Boolean).join(', ') : '';
+    return any;
+  };
+  let validando = false;
+  const revalidar = () => {
+    if (!validando) return;
+    const n = $$('#impList .mov', s).filter(faltan).length;
+    $('#iWarn', s).classList.toggle('hidden', !n);
+    $('#iWarn', s).innerHTML = `⚠️ <b>${n} movimiento${n === 1 ? '' : 's'} seleccionado${n === 1 ? '' : 's'}</b> sin completar (marcados en rojo). Rellena Grupo › Subgrupo, Año Mes y Concepto 2, o desmárcalos. <button class="chip" id="iNext">Ir al siguiente</button>`;
+    $('#iNext', s)?.addEventListener('click', () => $('#impList .mov.falta', s)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    return n;
+  };
+  $$('#impList .mov', s).forEach(el => ['input', 'change'].forEach(ev => el.addEventListener(ev, () => { if (validando) { faltan(el); revalidar(); } })));
   $('#iOk', s).onclick = async () => {
+    validando = true;
+    const pendientes = revalidar();
+    if (pendientes) {
+      toast(`Tienes ${pendientes} movimiento${pendientes === 1 ? '' : 's'} sin clasificar o sin Concepto 2`);
+      $('#impList .mov.falta', s)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     let n = 0;
     $$('#impList .mov', s).forEach(el => {
       const m = nuevos[+el.dataset.i]; if (!$('.inc', el).checked) return;
@@ -373,6 +402,34 @@ async function importarExtracto(file) {
     cerrarPanel(); state.mv = { ...state.mv, q: '', estado: '', limit: 60 };
     await Store.commit(`Importar ${n} movimientos`); toast(`${n} movimientos importados`); render();
   };
+}
+
+/* ---------- Exportar a Excel (mismo orden de columnas que la hoja "Extraciones") ---------- */
+const GRUPO_EXCEL = { ING: 'IngresoMensual', GMF: 'GastoMensualFijo', GAF: 'GastoAnualFijo', GEX: 'GastosExtra', OOC: 'OutOfContext', SE: 'SinEfecto' };
+function exportarExcel(list, rep) {
+  if (!window.XLSX) return alert('No se ha cargado el generador de Excel. Recarga la app.');
+  if (!list.length) return toast('No hay movimientos que exportar con estos filtros');
+  const X = window.XLSX;
+  const fechaXL = (iso) => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+  const cab = ['Fecha', 'F.Valor', 'Concepto', 'Movimiento', 'Importe', 'Divisa', 'Concepto2', 'Grupo', 'SubGrupo', 'Mes', 'Año', 'DateID', 'REPETIDO', 'Observaciones'];
+  const filas = [...list].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')).map(m => [
+    fechaXL(m.fecha), fechaXL(m.fvalor || m.fecha), m.concepto || '', m.movimiento || '', m.importe, m.divisa || 'EUR', m.concepto2 || '',
+    GRUPO_EXCEL[m.grupo] || '', m.subgrupo || '', m.mes ? C.MESES[m.mes - 1] : '', m.anio || '',
+    m.anio && m.mes ? new Date(m.anio, m.mes - 1, 1) : null, rep.has(m.id) ? 'R' : '', m.observaciones || ''
+  ]);
+  const ws = X.utils.aoa_to_sheet([cab, ...filas], { cellDates: true });
+  // formatos: fechas dd/mm/aaaa e importe con 2 decimales
+  for (let r = 1; r <= filas.length; r++) {
+    for (const c of [0, 1, 11]) { const ref = X.utils.encode_cell({ r, c }); if (ws[ref]) { ws[ref].t = 'd'; ws[ref].z = 'dd/mm/yyyy'; } }
+    const ri = X.utils.encode_cell({ r, c: 4 }); if (ws[ri]) ws[ri].z = '#,##0.00';
+  }
+  ws['!cols'] = [11, 11, 32, 32, 11, 7, 30, 18, 28, 11, 6, 11, 9, 40].map(w => ({ wch: w }));
+  ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: cab.length - 1 } }) };
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Extraciones');
+  const out = X.write(wb, { bookType: 'xlsx', type: 'array', cellDates: true });
+  const f = state.mv; const sufijo = [f.anio, f.mes && C.MESES_C[f.mes - 1], f.grupo, f.estado, f.q && 'busqueda'].filter(Boolean).join('-');
+  download(`movimientos-${new Date().toISOString().slice(0, 10)}${sufijo ? '-' + sufijo : ''}.xlsx`, out, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(`${filas.length} movimientos exportados a Excel`);
 }
 
 /* ===================== Ajustes ===================== */

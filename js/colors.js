@@ -1,7 +1,7 @@
 // Código de colores por familia (grupo) y subgrupo — se usa en toda la app.
 //  Ingresos (incl. Preahorro y Ahorro) → verdes · Gasto mensual fijo → naranjas · Efectivo → amarillo claro
 //  Gasto anual fijo → azules · Gasto Extra → granates · Out of Context → grises
-import { SUB } from './calc.js?v=1.5.2';
+import { SUB } from './calc.js?v=1.6.0';
 
 const isDark = () => {
   const t = document.documentElement.getAttribute('data-theme');
@@ -77,3 +77,10 @@ export function colorOtros(g) {
 }
 
 export function tint(color, pct = 14) { return `color-mix(in srgb, ${color} ${pct}%, var(--surface))`; }
+
+/** Color con transparencia, válido dentro de los gráficos (canvas no entiende variables CSS). */
+export function alpha(c, a) {
+  if (c.startsWith('#')) { const h = c.length === 4 ? c.slice(1).split('').map(x => x + x).join('') : c.slice(1, 7); const n = parseInt(h, 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+  if (c.startsWith('hsl(')) return c.replace(')', ` / ${a})`);
+  return c;
+}

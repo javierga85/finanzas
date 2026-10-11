@@ -1,10 +1,10 @@
 // Vistas de análisis: Dashboard, Tabla (Gasto anual), Histórico, Préstamos, Extra
-import { Store } from './store.js?v=1.5.2';
-import * as C from './calc.js?v=1.5.2';
+import { Store } from './store.js?v=1.6.0';
+import * as C from './calc.js?v=1.6.0';
 import { $, $$, esc, eur, eur0, pct, fecha, cls, css, makeChart, axisEur, compactEur, donutCard, modal, toast, confirmDlg,
-  showEur, showPct, fmtMode, dispPicker, bindPickers, MASK } from './ui.js?v=1.5.2';
-import { colorGrupo, colorSub, colorOtros, familia, tint, fixed } from './colors.js?v=1.5.2';
-import { leerHoja, parseCuadro } from './importer.js?v=1.5.2';
+  showEur, showPct, fmtMode, dispPicker, bindPickers, MASK } from './ui.js?v=1.6.0';
+import { colorGrupo, colorSub, colorOtros, familia, tint, fixed, alpha } from './colors.js?v=1.6.0';
+import { leerHoja, parseCuadro } from './importer.js?v=1.6.0';
 
 const D = () => Store.data;
 const neg = (v) => -(v || 0);
@@ -29,23 +29,26 @@ export function renderDashboard(main, ctx) {
   const st = ctx.state; const years = C.aniosConMovs(D());
   if (!years.length) return sinDatos(main);
   if (!years.includes(st.year)) st.year = years[years.length - 1];
-  const y = st.year; const cube = C.cubo(D()); const a = C.metricasAnio(cube, y);
+  const y = st.year; const cube = C.cubo(D());
+  const sm = st.dashMes || 0;                       // 0 = Full (año completo); 1-12 = un mes concreto
+  const a = sm ? C.metricasAnio(cube, y, [sm]) : C.metricasAnio(cube, y);
+  const per = sm ? `${y} ${C.MESES_C[sm - 1]}` : `${y}`;
   // Signos: ingresos, preahorro y ahorro en positivo; gastos en negativo
   const ingreso = a.ingreso, gastos = a.gastos, pre = neg(a.pre), ahorro = a.ahorroCuenta;
   const col = { ING: colorGrupo('ING'), GAS: fixed('GASTOS'), PRE: colorGrupo('PRE'), AHO: fixed('AHORRO'), GT: fixed('GRAN'), GMF: colorGrupo('GMF'), GAF: colorGrupo('GAF'), GEX: colorGrupo('GEX') };
   const mk = ctx.mode('kpi');
 
   main.innerHTML = `
-  <div class="toolbar"><label class="ink2 small">Año</label>${yearSelect(years, y)}<span class="grow"></span>${dispPicker('kpi', ctx)}</div>
+  <div class="toolbar"><label class="ink2 small">Año</label>${yearSelect(years, y)}<label class="ink2 small">Mes</label><select id="dashMes" aria-label="Mes"><option value="0">Full</option>${C.MESES.map((n, i) => `<option value="${i + 1}" ${sm === i + 1 ? 'selected' : ''}>${n}</option>`).join('')}</select><span class="grow"></span>${dispPicker('kpi', ctx)}</div>
   <div class="kpis">
     ${kpi('Ingreso', ingreso, col.ING, null, 'Salario + Dinero extra', mk)}
     ${kpi('Gastos', gastos, col.GAS, ingreso, 'Mensual fijo + Anual fijo + Extra', mk)}
     ${kpi('Preahorro', pre, col.PRE, ingreso, '', mk)}
     ${kpi('Ahorro', ahorro, col.AHO, ingreso, ahorro < 0 ? 'déficit' : '', mk)}
   </div>
-  <div class="section-title">Reparto · ${y}</div>
+  <div class="section-title">Reparto · ${per}</div>
   <div class="grid c3" id="donuts"></div>
-  <div class="section-title">Timeline · ${y}</div>
+  <div class="section-title">Timeline · ${y}${sm ? ` <span class="tag acc" style="text-transform:none;letter-spacing:0">resaltado: ${C.MESES[sm - 1]}</span>` : ''}</div>
   <div class="grid c2">
     <div class="card">${head('Ingresos vs Gastos + Preahorro', 'Por mes · la diferencia es el ahorro en cuenta', 'bars', ctx)}
       <div class="chips" style="margin-bottom:10px">${sw('Ingresos', col.ING)}${sw('Gastos', col.GAS)}${sw('Preahorro', col.PRE)}</div>
@@ -54,16 +57,17 @@ export function renderDashboard(main, ctx) {
       <div class="chips" id="lineChips" style="margin-bottom:10px"></div>
       <div class="chart-box"><canvas id="chLines"></canvas></div></div>
   </div>
-  <div class="card" style="margin-top:14px">${head(`Total anual por grupo · ${y}`, 'Elige qué grupos ver · % sobre el ingreso', 'groups', ctx)}
+  <div class="card" style="margin-top:14px">${head(`${sm ? 'Total del mes por grupo' : 'Total anual por grupo'} · ${per}`, 'Elige qué grupos ver · % sobre el ingreso', 'groups', ctx)}
     <div class="chips" id="grpChips" style="margin-bottom:10px"></div><div class="chart-box" style="height:240px"><canvas id="chGroups"></canvas></div></div>`;
   $('#yearSel', main).onchange = (e) => { st.year = +e.target.value; ctx.rerender(); };
+  $('#dashMes', main).onchange = (e) => { st.dashMes = +e.target.value; ctx.saveUi(); ctx.rerender(); };
 
   // Donuts — orden: Balance, Ingresos, Gastos, Gasto mensual fijo, Gasto anual fijo
   const host = $('#donuts', main);
   donutCard(host, {
     title: 'Balance', sub: 'Del total ingresado', centerLabel: 'Ingresado', mode: ctx.mode('dBal'), picker: dispPicker('dBal', ctx),
     items: [{ n: 'Gastos', v: neg(gastos), color: col.GAS, sign: -1 }, { n: 'Preahorro', v: pre, color: col.PRE }, { n: 'Ahorro', v: Math.max(0, ahorro), color: col.AHO }],
-    foot: ahorro < 0 ? `⚠️ Este año gastas más de lo que ingresas: ahorro ${eur(ahorro)}` : ''
+    foot: ahorro < 0 ? `⚠️ ${sm ? "Este mes" : "Este año"} gastas más de lo que ingresas: ahorro ${eur(ahorro)}` : ''
   });
   // el centro del Balance debe ser el ingreso, no la suma con signo
   fixCenter(host.lastElementChild, ingreso, ctx.mode('dBal'));
@@ -86,14 +90,15 @@ export function renderDashboard(main, ctx) {
   // Barras mensuales (alturas en magnitud para comparar; etiquetas con signo)
   const meses = [...Array(12).keys()].map(i => i + 1);
   const mm = meses.map(m => C.metricasMes(cube, y, m));
+  const hl = (c) => sm ? meses.map(m => m === sm ? c : alpha(c, 0.28)) : c;   // con un mes elegido, el resto se atenúa
   const mb = ctx.mode('bars');
   makeChart($('#chBars', main), {
     type: 'bar',
     data: {
       labels: C.MESES_C, datasets: [
-        { label: 'Ingresos', data: mm.map(x => x.ingreso), backgroundColor: col.ING, stack: 'i', borderRadius: 4, borderSkipped: 'start' },
-        { label: 'Gastos', data: mm.map(x => neg(x.gastos)), backgroundColor: col.GAS, stack: 'g', borderRadius: 0, sign: -1 },
-        { label: 'Preahorro', data: mm.map(x => neg(x.pre)), backgroundColor: col.PRE, stack: 'g', borderRadius: 4, borderSkipped: 'start' }
+        { label: 'Ingresos', data: mm.map(x => x.ingreso), backgroundColor: hl(col.ING), stack: 'i', borderRadius: 4, borderSkipped: 'start' },
+        { label: 'Gastos', data: mm.map(x => neg(x.gastos)), backgroundColor: hl(col.GAS), stack: 'g', borderRadius: 0, sign: -1 },
+        { label: 'Preahorro', data: mm.map(x => neg(x.pre)), backgroundColor: hl(col.PRE), stack: 'g', borderRadius: 4, borderSkipped: 'start' }
       ]
     },
     options: {
@@ -104,6 +109,7 @@ export function renderDashboard(main, ctx) {
         fzLabels: {
           pos: 'top', text: (di, i) => {
             const x = mm[i]; if (!x.ingreso && !x.gastos) return null;
+            if (sm && i + 1 !== sm) return null;   // con un mes elegido, solo se etiqueta ese mes
             if (di === 0) return showEur(mb) && x.ingreso ? compactEur(x.ingreso) : null;
             if (di === 2) { const g = x.gastos + x.pre; const out = []; if (showEur(mb)) out.push(compactEur(g)); if (showPct(mb) && x.ingreso) out.push(pct(Math.abs(g) / x.ingreso).replace(',0', '')); return out.length ? out : null; }
             return null;
@@ -115,7 +121,7 @@ export function renderDashboard(main, ctx) {
   });
 
   // Líneas acumuladas (gasto acumulado en negativo)
-  const last = Math.max(0, ...Object.keys(cube[y] || {}).map(Number));
+  const last = sm || Math.max(0, ...Object.keys(cube[y] || {}).map(Number));
   const acc = (f) => { let s = 0; return meses.map(m => m > last ? null : (s += f(mm[m - 1]), s)); };
   const ingAcc = acc(x => x.ingreso);
   const series = [
@@ -336,7 +342,7 @@ export function renderHistorico(main, ctx) {
   let s = 0, si = 0; const accd = H.map(h => (s += h.ahorro || 0)); const accI = H.map(h => (si += h.ingreso || 0));
   const cg = fixed('GRAN');
   makeChart($('#chHistAcc', main), {
-    type: 'line', data: { labels: H.map(h => h.anio), datasets: [{ label: 'Ahorro acumulado', data: accd, borderColor: cg, backgroundColor: tint(cg, 18), fill: true, borderWidth: 2, pointRadius: 3.5, tension: .25 }] },
+    type: 'line', data: { labels: H.map(h => h.anio), datasets: [{ label: 'Ahorro acumulado', data: accd, borderColor: cg, backgroundColor: alpha(cg, 0.15), fill: true, borderWidth: 2, pointRadius: 3.5, tension: .25 }] },
     options: {
       layout: { padding: { right: ma === 'none' ? 4 : 56 } },
       interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false } }, y: { ...axisEur, display: showEur(ma) } },

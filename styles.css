@@ -262,3 +262,21 @@ body.panel-min main,body.panel-min .topbar{margin-right:0}
 .imp4 .r4{grid-template-columns:1fr 130px}
 .imp4 select.mm{font-variant-numeric:tabular-nums}
 .tag.ftag{font-variant-numeric:tabular-nums;background:var(--accent-soft);color:var(--ink)}
+/* v1.6: validación de la importación */
+.imp4.falta{outline:2px solid var(--bad);background:color-mix(in srgb,var(--bad-bg) 60%,var(--surface))}
+.campo-falta{border-color:var(--bad)!important;box-shadow:0 0 0 1px var(--bad)}
+.imp4 .aviso{color:var(--bad-ink);font-size:12px;font-weight:600}
+.imp4 .aviso:empty{display:none}
+.warnbox{background:var(--bad-bg);color:var(--bad-ink);margin:0 0 8px}
+.warnbox .chip{margin-left:6px}
+/* v1.6: leyenda legible en tarjetas estrechas */
+.legend li{grid-template-columns:10px minmax(92px,1fr) auto auto}
+.legend li .n{word-break:normal;overflow-wrap:break-word;hyphens:auto}
+.legend li .p small{font-size:10.5px}
+/* donut: leyenda debajo cuando la tarjeta es estrecha */
+.card{container-type:inline-size}
+@container (max-width:430px){
+  .donut-wrap{grid-template-columns:1fr}
+  .donut-box{margin:0 auto;width:150px;height:150px}
+}
+.legend{min-width:0}
